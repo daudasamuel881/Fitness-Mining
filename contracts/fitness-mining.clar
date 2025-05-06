@@ -98,3 +98,74 @@
 (define-read-only (get-token-uri)
     (var-get token-uri)
 )
+
+
+(define-map user-streaks 
+    principal 
+    { current-streak: uint, last-activity: uint }
+)
+
+(define-data-var streak-bonus-multiplier uint u10)
+
+(define-read-only (get-user-streak (user principal))
+    (default-to { current-streak: u0, last-activity: u0 } 
+        (map-get? user-streaks user))
+)
+
+(define-public (set-streak-multiplier (multiplier uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (var-set streak-bonus-multiplier multiplier)
+        (ok true))
+)
+
+(define-private (update-streak (user principal) (timestamp uint))
+    (let (
+        (user-data (get-user-streak user))
+        (last-activity (get last-activity user-data))
+        (current-streak (get current-streak user-data))
+        (one-day u86400)
+        (new-streak (if (< (- timestamp last-activity) one-day)
+            (+ current-streak u1)
+            u1))
+    )
+    (map-set user-streaks user 
+        { current-streak: new-streak, last-activity: timestamp })
+    new-streak)
+)
+
+
+(define-map weekly-points
+    { user: principal, week: uint }
+    uint
+)
+
+(define-map monthly-points 
+    { user: principal, month: uint }
+    uint
+)
+
+(define-read-only (get-weekly-points (user principal) (week uint))
+    (default-to u0 
+        (map-get? weekly-points { user: user, week: week }))
+)
+
+(define-read-only (get-monthly-points (user principal) (month uint))
+    (default-to u0 
+        (map-get? monthly-points { user: user, month: month }))
+)
+
+(define-private (add-points (user principal) (timestamp uint) (duration uint))
+    (let (
+        (week (/ timestamp u604800))
+        (month (/ timestamp u2592000))
+        (points (* duration u1))
+        (current-weekly (get-weekly-points user week))
+        (current-monthly (get-monthly-points user month))
+    )
+    (map-set weekly-points { user: user, week: week }
+        (+ current-weekly points))
+    (map-set monthly-points { user: user, month: month }
+        (+ current-monthly points))
+    (ok true))
+)
